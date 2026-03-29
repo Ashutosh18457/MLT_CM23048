@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Assignment 1: Train Model & Save to LocalStorage</title>
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@latest/dist/tf.min.js"></script>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { 
+            font-family: 'Segoe UI', sans-serif; 
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%); 
+            min-height: 100vh; 
+            color: #333; 
+            padding: 20px;
+        }
+        .container { max-width: 800px; margin: 0 auto; }
+        h1 { text-align: center; color: white; margin-bottom: 30px; font-size: 2.5em; text-shadow: 0 4px 8px rgba(0,0,0,0.3); }
+        .card { 
+            background: rgba(255,255,255,0.95); 
+            border-radius: 20px; 
+            padding: 30px; 
+            margin-bottom: 20px; 
+            box-shadow: 0 20px 40px rgba(0,0,0,0.1); 
+        }
+        button { 
+            padding: 12px 24px; border: none; border-radius: 25px; 
+            font-weight: bold; cursor: pointer; transition: all 0.3s; 
+            box-shadow: 0 5px 15px rgba(0,0,0,0.2); margin: 5px; background: linear-gradient(45deg, #4facfe, #00f2fe); color: white;
+        }
+        button:hover:not(:disabled) { transform: scale(1.05); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; background: #ccc; }
+        input { padding: 12px; border: 2px solid #e0e0e0; border-radius: 10px; margin: 5px; width: 200px; }
+        input:focus { border-color: #4facfe; outline: none; }
+        #status, #result { margin: 20px 0; padding: 15px; background: #f8f9fa; border-radius: 10px; }
+        #status.success { background: #d4edda; color: #155724; }
+        #status.error { background: #f8d7da; color: #721c24; }
+        pre { background: #f4f4f4; padding: 15px; border-radius: 10px; overflow-x: auto; font-size: 0.9em; }
+        @media (max-width: 768px) { .container { padding: 10px; } h1 { font-size: 2em; } }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>💾 Assignment 1: Train & Persist Model in LocalStorage</h1>
+        
+        <div class="card">
+            <h2>📚 Step 1: Train Small Model</h2>
+            <p>Trains linear regression model (y ≈ 2x + 1) on synthetic data.</p>
+            <button id="trainBtn">🚀 Train Model</button>
+            <div id="status"></div>
+        </div>
+        
+        <div class="card">
+            <h2>💾 Step 2: Save to LocalStorage</h2>
+            <button id="saveBtn" disabled>💾 Save Model 'linear-model'</button>
+        </div>
+        
+        <div class="card">
+            <h2>📂 Step 3: Load & Predict</h2>
+            <button id="loadBtn">📂 Load from LocalStorage</button>
+            <input type="number" id="predictInput" placeholder="Enter x (e.g. 5.0)" step="0.1">
+            <button id="predictBtn" disabled>🔮 Predict</button>
+            <div id="result"></div>
+        </div>
+        
+        <div class="card">
+            <h3>Model Info</h3>
+            <div id="modelInfo"></div>
+        </div>
+    </div>
+
+    <script>
+        let model = null;
+        const MODEL_KEY = 'linear-model';
+        const statusEl = document.getElementById('status');
+        const resultEl = document.getElementById('result');
+        const modelInfoEl = document.getElementById('modelInfo');
+
+        function updateStatus(msg, type = '') {
+            statusEl.textContent = msg;
+            statusEl.className = type;
+        }
+
+        document.getElementById('trainBtn').addEventListener('click', async () => {
+            try {
+                updateStatus('Generating synthetic data...', '');
+                
+                // Step 1: Synthetic data y = 2x + 1 + noise
+                const xs = tf.randomNormal([500, 1], 0, 5);  // x ~ N(0,5)
+                const ys = xs.mul(2).add(1).add(tf.randomNormal([500, 1], 0, 0.5));  // y = 2x + 1 + noise
+
+                // Step 2: Create small model
+                model = tf.sequential({
+                    layers: [
+                        tf.layers.dense({ inputShape: [1], units: 1 })
+                    ]
+                });
+                model.compile({
+                    optimizer: 'sgd',
+                    loss: 'meanSquaredError'
+                });
+
+                updateStatus('Training model (10 epochs)...', '');
+
+                // Step 3: Train
+                await model.fit(xs, ys, {
+                    epochs: 10,
+                    callbacks: {
+                        onEpochEnd: (epoch, logs) => {
+                            updateStatus(`Epoch ${epoch + 1}/10, Loss: ${logs.loss.toFixed(4)}`);
+                        }
+                    }
+                });
+
+                xs.dispose();
+                ys.dispose();
+
+                document.getElementById('saveBtn').disabled = false;
+                document.getElementById('modelInfo').innerHTML = '<pre>' + (await model.summary()).toString() + '</pre>';
+                updateStatus('✅ Model trained successfully! Ready to save.', 'success');
+            } catch (error) {
+                updateStatus('❌ Training failed: ' + error.message, 'error');
+            }
+        });
+
+        document.getElementById('saveBtn').addEventListener('click', async () => {
+            try {
+                updateStatus('Saving to LocalStorage...', '');
+                await model.save(`localstorage://${MODEL_KEY}`);
+                updateStatus('✅ Model saved to LocalStorage!', 'success');
+            } catch (error) {
+                updateStatus('❌ Save failed: ' + error.message, 'error');
+            }
+        });
+
+        document.getElementById('loadBtn').addEventListener('click', async () => {
+            try {
+                updateStatus('Loading from LocalStorage...', '');
+                const loadedModel = await tf.loadLayersModel(`localstorage://${MODEL_KEY}`);
+                model = loadedModel;
+                document.getElementById('predictBtn').disabled = false;
+                document.getElementById('modelInfo').innerHTML = '<pre>Model loaded from LocalStorage!</pre>';
+                updateStatus('✅ Model loaded from LocalStorage!', 'success');
+            } catch (error) {
+                updateStatus('❌ No model in LocalStorage or load failed', 'error');
+            }
+        });
+
+        document.getElementById('predictBtn').addEventListener('click', async () => {
+            try {
+                const x = parseFloat(document.getElementById('predictInput').value);
+                if (isNaN(x)) throw new Error('Enter valid number');
+
+                const input = tf.tensor2d([[x]]);
+                const output = model.predict(input);
+                const pred = (await output.data())[0];
+
+                resultEl.innerHTML = `
+                    <h3>🔮 Prediction Result</h3>
+                    <p><strong>Input x:</strong> ${x}</p>
+                    <p><strong>Predicted y:</strong> <span style="font-size:1.5em;color:#4facfe">${pred.toFixed(4)}</span></p>
+                    <p><em>(Expected ~${(2*x + 1).toFixed(2)})</em></p>
+                `;
+                input.dispose();
+                output.dispose();
+                updateStatus('✅ Prediction complete!', 'success');
+            } catch (error) {
+                updateStatus('❌ Prediction error: ' + error.message, 'error');
+            }
+        });
+    </script>
+</body>
+</html>
